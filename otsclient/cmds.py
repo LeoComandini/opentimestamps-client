@@ -514,10 +514,8 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
             # as of now, only bitcoin attestations can be verified
             if attestation.__class__ == BitcoinBlockHeaderAttestation:
                 if not args.use_bitcoin:
-                    logging.warning("Not checking Bitcoin attestation; Bitcoin disabled")
-                    logging.info("To verify manually, check that Bitcoin block %d has merkleroot %s" % 
-                                 (attestation.height, b2lx(msg)))
-                    return False
+                    logging.error("Bitcoin disabled, could not check attestations")
+                    sys.exit(1)
                 proxy = args.setup_bitcoin()
                 try:
                     block_count = proxy.getblockcount()
@@ -527,19 +525,26 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
                 except IndexError:
                     logging.error("Bitcoin block height %d not found; %d is highest known block" % (
                         attestation.height, block_count))
-                    return False
+                    sys.exit(1)
                 except ConnectionError as exp:
                     logging.error("Could not connect to local Bitcoin node: %s" % exp)
-                    return False
+                    sys.exit(1)
                 except VerificationError as err:
                     logging.error("Bitcoin verification failed: %s" % str(err))
-                    return False 
-    return True
+                    sys.exit(1)
+            else:
+                logging.error("Could not verify; verification with %s not supported" % str(attestation.__class__))
+                sys.exit(1)
 
 
 def discard_attestations(timestamp, attestations_to_discard):
     for a in timestamp.attestations.copy():
-        if a.__class__ in attestations_to_discard:
+        if a.__class__ == PendingAttestation:
+            if PendingAttestation in attestations_to_discard:
+                timestamp.attestations.remove(a)
+            elif a in attestations_to_discard:
+                timestamp.attestations.remove(a)
+        elif a.__class__ in attestations_to_discard:
             timestamp.attestations.remove(a)
     for op, stamp in timestamp.ops.items():
         discard_attestations(stamp, attestations_to_discard)
@@ -548,7 +553,7 @@ def discard_attestations(timestamp, attestations_to_discard):
 def discard_suboptimal(timestamp, target_attestation):
     opt_att = None
     opt_nod = None  # necessary to go back and remove an updated optimal attestation
-    opt_dep = 0  # depth does not include attestations, although they may be relevant for the size
+    opt_dep = 0  # depth does not include attestations, although they may be relevant for overall size
 
     for op, stamp in timestamp.ops.copy().items():
         cur_opt_att, cur_opt_nod, cur_opt_dep = discard_suboptimal(stamp, target_attestation)
@@ -575,11 +580,8 @@ def discard_suboptimal(timestamp, target_attestation):
             else:  # an opt attestation was already found
                 if a > opt_att:  # a is not optimal
                     timestamp.attestations.remove(a)
-                elif a < opt_att:  # found a new optimal attestation
-                    opt_nod.attestations.remove(opt_att)  # remove previous
-                    opt_att, opt_nod = a, timestamp  # update
-                else:  # a == opt_att
-                    # if here, then the timestamp attestation is *always* better than the optimal
+                elif a <= opt_att:  # found a new optimal attestation
+                    # if a = opt_att, then a is optimal, because the timestamp attestation is less deep
                     opt_nod.attestations.remove(opt_att)  # remove previous
                     opt_att, opt_nod = a, timestamp  # update
 
@@ -598,31 +600,22 @@ def prune_tree(timestamp):
 
 
 def prune_timestamp(timestamp, attestations_to_verify, attestations_to_discard, args):
-    # It is inefficient to explore the tree several (5) times, but it avoids errors in complicated cases
-    # If some assumptions are made (e.g. drop all attestation except "btc"), then more efficient functions could be made
-    if not verify_all_attestations(timestamp, attestations_to_verify, args):
-        logging.info("An attestation failed")  # FIXME
-        return False  # verification failed, halt process
+    """Prune timestamp
+
+    It is inefficient to explore the tree several (5) times, but it avoids errors in particular cases. If some
+    assumptions are made (e.g. drop all attestation except best "btc"), then more efficient implementations could be
+    made"""
+
+    verify_all_attestations(timestamp, attestations_to_verify, args)
     discard_attestations(timestamp, attestations_to_discard)
+    # discard suboptimal attestations for each comparable attestation class
     discard_suboptimal(timestamp, BitcoinBlockHeaderAttestation)
     discard_suboptimal(timestamp, LitecoinBlockHeaderAttestation)
     prune_tree(timestamp)
-    return len(timestamp.ops) > 0  # false if the timestamp is empty
+    return len(timestamp.ops) > 0  # false if the timestamp has no branches
 
 
 def prune_command(args):
-
-    def string2attestation(s):
-        if s == "unknown":
-            return UnknownAttestation
-        elif s == "pending":
-            return PendingAttestation
-        elif s == "btc":
-            return BitcoinBlockHeaderAttestation
-        elif s == "ltc":
-            return LitecoinBlockHeaderAttestation
-        else:
-            raise ValueError("Unexpected string")
 
     # read ots
     ctx = StreamDeserializationContext(args.timestamp_fd)
@@ -635,20 +628,41 @@ def prune_command(args):
         logging.error("Invalid timestamp file %r: %s" % (args.timestamp_fd.name, exp))
         sys.exit(1)
 
-    # find attestation have to be verified and which discarded
-    if args.attestations_to_verify or args.no_verify:
-        attestations_to_verify = [string2attestation(s) for s in args.attestations_to_verify]
-    else:
-        attestations_to_verify = [string2attestation("btc")]
+    attestations_to_verify = []
+    if args.attestations_to_verify:
+        for s in args.attestations_to_verify:
+            if s == "btc":
+                attestations_to_verify += [BitcoinBlockHeaderAttestation]
+            else:
+                logging.error("ots prune: error: argument --verify: invalid choice: '%s' (choose from 'btc')", s)
+                sys.exit(1)
+    elif not args.no_verify:  # default
+        attestations_to_verify = [BitcoinBlockHeaderAttestation]
 
+    attestations_to_discard = []
     if args.attestations_to_discard:
-        attestations_to_discard = [string2attestation(s) for s in args.attestations_to_discard]
-    else:
-        attestations_to_discard = [string2attestation("pending")]
+        for s in args.attestations_to_discard:
+            if s == "btc":
+                attestations_to_discard += BitcoinBlockHeaderAttestation
+            elif s == "ltc":
+                attestations_to_discard += LitecoinBlockHeaderAttestation
+            elif s == "unknown":
+                attestations_to_discard += UnknownAttestation
+            elif s[:8] == "pending:":
+                if s[8:] == "*":
+                    attestations_to_discard += PendingAttestation
+                else:
+                    attestations_to_discard += PendingAttestation(s[8:])
+            else:
+                logging.error("ots prune: error: argument --discard: invalid choice: '%s' (choose from 'btc', 'ltc', "
+                              "'unknown', 'pending:*', 'pending:uri')", s)
+                sys.exit(1)
+    else:  # default
+        attestations_to_discard = [PendingAttestation]
 
     if prune_timestamp(detached_timestamp.timestamp, attestations_to_verify, attestations_to_discard, args):
         # prune successful, update ots
-        backup_name = args.timestamp_fd.name + '.bak.unpruned'  # FIXME: is this correct?
+        backup_name = args.timestamp_fd.name + ".bak"
         logging.debug("Pruned successful; renaming existing timestamp to %r" % backup_name)
         if os.path.exists(backup_name):
             logging.error("Could not backup timestamp: %r already exists" % backup_name)
@@ -667,9 +681,8 @@ def prune_command(args):
             # FIXME: should we try to restore the old file here?
             logging.error("Could not upgrade timestamp %s: %s" % (args.timestamp_fd.name, exp))
             sys.exit(1)
-
-    else:  # prune failed (verification failed or timestamp empty)
-        logging.info("Prune failed.")
+    else:
+        logging.warning("Failed to prune timestamp, all attestations have been discarded.")
         sys.exit(1)
 
 

@@ -222,14 +222,14 @@ def parse_ots_args(raw_args):
 
     prune_verify_group = parser_prune.add_mutually_exclusive_group()
     prune_verify_group.add_argument('--verify', dest='attestations_to_verify', metavar='NOTARYSPEC', action='append',
-                                    choices=["btc"], type=str, default=[],
+                                    type=str, default=[],
                                     help='Choose attestations to verify. May be specified multiple times. Default btc.')
     prune_verify_group.add_argument('--no-verify', dest='no_verify', action='store_true', default=False,
-                                    help="Avoid verification of timestamp. Warning: may make the timestamp invalid")
+                                    help="Avoid verification of timestamp.")
 
     parser_prune.add_argument('--discard', dest='attestations_to_discard', metavar='NOTARYSPEC', action='append',
-                              choices=["unknown", "pending", "btc", "ltc"], type=str, default=[],
-                              help='Choose attestations to discard. May be specified multiple times. Default pending.')
+                              type=str, default=[],
+                              help='Choose attestations to discard. May be specified multiple times. Default pending:*.')
 
     parser_prune.add_argument('timestamp_fd', metavar='TIMESTAMP', type=argparse.FileType('rb'),
                               help='Timestamp filename')
