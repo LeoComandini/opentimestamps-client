@@ -225,7 +225,7 @@ def parse_ots_args(raw_args):
                                     type=str, default=[],
                                     help='Choose attestations to verify. May be specified multiple times. Default btc.')
     prune_verify_group.add_argument('--no-verify', dest='no_verify', action='store_true', default=False,
-                                    help="Avoid verification of timestamp.")
+                                    help="Avoid verification of attestations.")
 
     parser_prune.add_argument('--discard', dest='attestations_to_discard', metavar='NOTARYSPEC', action='append',
                               type=str, default=[],
