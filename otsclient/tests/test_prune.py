@@ -17,14 +17,6 @@ from opentimestamps.core.notary import BitcoinBlockHeaderAttestation, LitecoinBl
 from otsclient.cmds import discard_attestations, discard_suboptimal, prune_tree, prune_timestamp
 
 
-def compare_timestamps(t1, t2):
-    """Return True iff the timestamps t1 and t2 are equal, checking also the attestations (unlike t1 == t2)"""
-    if t1.attestations == t2.attestations and t1.msg == t2.msg and t1.ops.keys() == t2.ops.keys():
-        if all([compare_timestamps(stamp, t2.ops[op]) for op, stamp in t1.ops.items()]):
-            return True
-    return False
-
-
 class TestPrune(unittest.TestCase):
 
     def test_discard_attestations(self):
@@ -44,7 +36,7 @@ class TestPrune(unittest.TestCase):
         tn1.attestations = {BitcoinBlockHeaderAttestation(1)}
         tn2.attestations = {PendingAttestation("c2")}
 
-        self.assertTrue(compare_timestamps(t, tn))
+        self.assertEqual(t, tn)
 
     def test_discard_suboptimal(self):
         """Discarding suboptimal attestations"""
@@ -69,22 +61,34 @@ class TestPrune(unittest.TestCase):
         tn2.attestations = {BitcoinBlockHeaderAttestation(1)}
         tn4.attestations = {LitecoinBlockHeaderAttestation(1)}
 
-        self.assertTrue(compare_timestamps(t, tn))
+        self.assertEqual(t, tn)
 
     def test_prune_tree(self):
         """Pruning tree"""
         t = Timestamp(b'')
+
+        empty, changed = prune_tree(t)
+
+        self.assertTrue(empty)
+        self.assertFalse(changed)
+
         t1 = t.ops.add(OpAppend(b'\x01'))
         t2 = t.ops.add(OpAppend(b'\x02'))
         t1.attestations = {PendingAttestation("")}
 
-        prune_tree(t)
+        empty, changed = prune_tree(t)
 
         tn = Timestamp(b'')
         tn1 = tn.ops.add(OpAppend(b'\x01'))
         tn1.attestations = {PendingAttestation("")}
 
-        self.assertTrue(compare_timestamps(t, tn))
+        self.assertEqual(t, tn)
+        self.assertFalse(empty)
+        self.assertTrue(changed)
+
+        _, changed = prune_tree(t)
+
+        self.assertFalse(changed)
 
     def test_pruning_timestamp(self):
         """Pruning timestamp"""
@@ -107,4 +111,4 @@ class TestPrune(unittest.TestCase):
         tn31 = tn3.ops.add(OpAppend(b'\x03'))
         tn31.attestations = {BitcoinBlockHeaderAttestation(1)}
 
-        self.assertTrue(compare_timestamps(t, tn))
+        self.assertEqual(t, tn)

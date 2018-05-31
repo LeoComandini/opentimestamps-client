@@ -223,16 +223,18 @@ def parse_ots_args(raw_args):
     prune_verify_group = parser_prune.add_mutually_exclusive_group()
     prune_verify_group.add_argument('--verify', dest='attestations_to_verify', metavar='NOTARYSPEC', action='append',
                                     type=str, default=[],
-                                    help='Choose attestations to verify. May be specified multiple times. Default btc.')
+                                    help='Verify attestations from a specified notary. May be specified multiple times.'
+                                         ' Default btc.')
     prune_verify_group.add_argument('--no-verify', dest='no_verify', action='store_true', default=False,
-                                    help="Avoid verification of attestations.")
+                                    help='Do not verify any attestation.')
 
     parser_prune.add_argument('--discard', dest='attestations_to_discard', metavar='NOTARYSPEC', action='append',
                               type=str, default=[],
-                              help='Choose attestations to discard. May be specified multiple times. Default pending:*.')
+                              help='Discard attestations from a specified notary. May be specified multiple times. '
+                                   'Default pending:*.')
 
     parser_prune.add_argument('timestamp_fd', metavar='TIMESTAMP', type=argparse.FileType('rb'),
-                              help='Timestamp filename')
+                              help='Existing timestamp; moved to TIMESTAMP.bak')
 
     parser_stamp.set_defaults(cmd_func=otsclient.cmds.stamp_command)
     parser_upgrade.set_defaults(cmd_func=otsclient.cmds.upgrade_command)

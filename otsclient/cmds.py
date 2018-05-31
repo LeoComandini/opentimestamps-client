@@ -539,7 +539,7 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
 
 def discard_attestations(timestamp, attestations_to_discard):
     for a in timestamp.attestations.copy():
-        # The client must be able to discard a particular pending attestation,
+        # The client should be able to discard a particular pending attestation,
         # thus pending attestations are managed differently
         if a.__class__ == PendingAttestation:
             if PendingAttestation in attestations_to_discard:
@@ -559,11 +559,11 @@ def discard_suboptimal(timestamp, target_attestation):
     # optimal attestation, node and depth;
     # it is necessary to store the optimal node to go back and remove an updated optimal attestation.
 
-    for op, stamp in timestamp.ops.copy().items():
+    for op, stamp in timestamp.ops.items():
         cur_opt_att, cur_opt_nod, cur_opt_dep = discard_suboptimal(stamp, target_attestation)
         cur_opt_dep += 1 + (0 if len(op) == 0 else len(op[0]))
         # all Op are encoded with one byte;
-        # depth does not count attestations, although they may be relevant for overall size.
+        # depth does not count attestation sizes, although they may be relevant for overall size.
         if cur_opt_att:
             if not opt_att:
                 opt_att, opt_nod, opt_dep = cur_opt_att, cur_opt_nod, cur_opt_dep
@@ -587,8 +587,8 @@ def discard_suboptimal(timestamp, target_attestation):
             else:
                 if a > opt_att:
                     timestamp.attestations.remove(a)
-                elif a <= opt_att:
-                    # if a = opt_att, then a is optimal, because the timestamp attestation is less deep
+                else:
+                    # if a == opt_att, then a is optimal, because the timestamp attestation is less deep
                     opt_nod.attestations.remove(opt_att)
                     opt_att, opt_nod = a, timestamp
 
@@ -597,13 +597,15 @@ def discard_suboptimal(timestamp, target_attestation):
 
 def prune_tree(timestamp):
     prunable = len(timestamp.attestations) == 0
+    changed = False
     for op, stamp in timestamp.ops.copy().items():
-        stamp_prunable = prune_tree(stamp)
+        stamp_prunable, stamp_changed = prune_tree(stamp)
+        changed = changed or stamp_changed or stamp_prunable
         if stamp_prunable:
             del timestamp.ops[op]
         else:
             prunable = False
-    return prunable
+    return prunable, changed
 
 
 def prune_timestamp(timestamp, attestations_to_verify, attestations_to_discard, args):
@@ -612,7 +614,7 @@ def prune_timestamp(timestamp, attestations_to_verify, attestations_to_discard, 
     Returns True if the timestamp has been pruned correctly, False if all branches have been pruned.
 
     Note that it is inefficient to explore the tree several (5) times, but it avoids errors in particular cases.
-    If the requests are more specific (e.g. discard all attestation except best "btc"), then more efficient
+    If the requests are more specific (e.g. discard all attestations except best "btc"), then more efficient
     implementation could be made.
     """
 
@@ -621,13 +623,11 @@ def prune_timestamp(timestamp, attestations_to_verify, attestations_to_discard, 
     # discard suboptimal attestations for each comparable attestation class
     discard_suboptimal(timestamp, BitcoinBlockHeaderAttestation)
     discard_suboptimal(timestamp, LitecoinBlockHeaderAttestation)
-    prune_tree(timestamp)
-    return len(timestamp.ops) > 0
+    prunable, changed = prune_tree(timestamp)
+    return prunable, changed
 
 
 def prune_command(args):
-
-    # read ots
     ctx = StreamDeserializationContext(args.timestamp_fd)
     try:
         detached_timestamp = DetachedTimestampFile.deserialize(ctx)
@@ -672,8 +672,14 @@ def prune_command(args):
         # default case
         attestations_to_discard = [PendingAttestation]
 
-    if prune_timestamp(detached_timestamp.timestamp, attestations_to_verify, attestations_to_discard, args):
-        # prune successful, update ots
+    empty, changed = prune_timestamp(detached_timestamp.timestamp, attestations_to_verify, attestations_to_discard, args)
+    if empty:
+        logging.warning("Failed! All attestations have been discarded")
+        sys.exit(1)
+    elif not changed:
+        logging.warning("Failed! Nothing has been discarded")
+        sys.exit(1)
+    else:
         backup_name = args.timestamp_fd.name + ".bak"
         logging.debug("Prune successful; renaming existing timestamp to %r" % backup_name)
         if os.path.exists(backup_name):
@@ -693,9 +699,8 @@ def prune_command(args):
             # FIXME: should we try to restore the old file here?
             logging.error("Could not upgrade timestamp %s: %s" % (args.timestamp_fd.name, exp))
             sys.exit(1)
-    else:
-        logging.warning("Failed to prune timestamp, all attestations have been discarded.")
-        sys.exit(1)
+
+        logging.info("Success! Timestamp pruned")
 
 
 def git_extract_command(args):
