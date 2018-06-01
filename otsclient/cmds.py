@@ -611,7 +611,9 @@ def prune_tree(timestamp):
 def prune_timestamp(timestamp, attestations_to_verify, attestations_to_discard, args):
     """Attempt to prune timestamp
 
-    Returns True if the timestamp has been pruned correctly, False if all branches have been pruned.
+    Returns prunable and changed:
+    - prunable is True iff the pruned timestamp is empty;
+    - changed is True iff the pruned timestamp differs from the one input.
 
     Note that it is inefficient to explore the tree several (5) times, but it avoids errors in particular cases.
     If the requests are more specific (e.g. discard all attestations except best "btc"), then more efficient
@@ -644,7 +646,7 @@ def prune_command(args):
             if s == "btc":
                 attestations_to_verify += [BitcoinBlockHeaderAttestation]
             else:
-                logging.error("ots prune: error: argument --verify: invalid choice: '%s' (choose from 'btc')", s)
+                args.parser.error("argument --verify: invalid choice: '%s' (choose from 'btc')" % s)
                 sys.exit(1)
     elif not args.no_verify:
         # default case, otherwise attestations_to_verify is left empty
@@ -665,8 +667,8 @@ def prune_command(args):
                 else:
                     attestations_to_discard += [PendingAttestation(s[8:])]
             else:
-                logging.error("ots prune: error: argument --discard: invalid choice: '%s' (choose from 'btc', 'ltc', "
-                              "'unknown', 'pending:*', 'pending:uri')", s)
+                args.parser.error("argument --discard: invalid choice: '%s' (choose from 'btc', 'ltc', 'unknown', "
+                                  "'pending:*', 'pending:uri')" % s)
                 sys.exit(1)
     else:
         # default case
