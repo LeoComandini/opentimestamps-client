@@ -516,7 +516,9 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
                 if not args.use_bitcoin:
                     logging.error("Bitcoin disabled, could not check attestations")
                     sys.exit(1)
+
                 proxy = args.setup_bitcoin()
+
                 try:
                     block_count = proxy.getblockcount()
                     blockhash = proxy.getblockhash(attestation.height)
@@ -532,6 +534,7 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
                 except VerificationError as err:
                     logging.error("Bitcoin verification failed: %s" % str(err))
                     sys.exit(1)
+
             else:
                 logging.error("Could not verify; verification with %s not supported" % str(attestation.__class__))
                 sys.exit(1)
@@ -548,6 +551,7 @@ def discard_attestations(timestamp, attestations_to_discard):
                 timestamp.attestations.remove(a)
         elif a.__class__ in attestations_to_discard:
             timestamp.attestations.remove(a)
+
     for op, stamp in timestamp.ops.items():
         discard_attestations(stamp, attestations_to_discard)
 
@@ -598,6 +602,7 @@ def discard_suboptimal(timestamp, target_attestation):
 def prune_tree(timestamp):
     prunable = len(timestamp.attestations) == 0
     changed = False
+
     for op, stamp in timestamp.ops.copy().items():
         stamp_prunable, stamp_changed = prune_tree(stamp)
         changed = changed or stamp_changed or stamp_prunable
@@ -605,6 +610,7 @@ def prune_tree(timestamp):
             del timestamp.ops[op]
         else:
             prunable = False
+
     return prunable, changed
 
 
@@ -675,6 +681,7 @@ def prune_command(args):
         attestations_to_discard = [PendingAttestation]
 
     empty, changed = prune_timestamp(detached_timestamp.timestamp, attestations_to_verify, attestations_to_discard, args)
+
     if empty:
         logging.warning("Failed! All attestations have been discarded")
         sys.exit(1)

@@ -74,13 +74,13 @@ class TestPrune(unittest.TestCase):
 
         t1 = t.ops.add(OpAppend(b'\x01'))
         t2 = t.ops.add(OpAppend(b'\x02'))
-        t1.attestations = {PendingAttestation("")}
+        t1.attestations = {PendingAttestation("c")}
 
         empty, changed = prune_tree(t)
 
         tn = Timestamp(b'')
         tn1 = tn.ops.add(OpAppend(b'\x01'))
-        tn1.attestations = {PendingAttestation("")}
+        tn1.attestations = {PendingAttestation("c")}
 
         self.assertEqual(t, tn)
         self.assertFalse(empty)
