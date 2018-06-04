@@ -542,7 +542,7 @@ def verify_all_attestations(timestamp, attestations_to_verify, args):
 
 def discard_attestations(timestamp, attestations_to_discard):
     for a in timestamp.attestations.copy():
-        # The client should be able to discard a particular pending attestation,
+        # The client should be able to discard pending attestations from a specified calendar,
         # thus pending attestations are managed differently
         if a.__class__ == PendingAttestation:
             if PendingAttestation in attestations_to_discard:
